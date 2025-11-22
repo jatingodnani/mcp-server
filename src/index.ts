@@ -138,6 +138,134 @@ const TOOLS: Tool[] = [
       properties: {},
     },
   },
+  {
+    name: "wait_for",
+    description: "Wait for an element to appear on the page.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        selector: {
+          type: "string",
+          description: "CSS selector for the element to wait for",
+        },
+        timeout: {
+          type: "number",
+          description: "Maximum time to wait in milliseconds. Defaults to 30000.",
+        },
+      },
+      required: ["selector"],
+    },
+  },
+  {
+    name: "scroll",
+    description: "Scroll the page in a specified direction or to a specific element.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        direction: {
+          type: "string",
+          enum: ["up", "down", "top", "bottom"],
+          description: "Direction to scroll: up, down, top, or bottom",
+        },
+        selector: {
+          type: "string",
+          description: "CSS selector of element to scroll into view. If provided, direction is ignored.",
+        },
+      },
+    },
+  },
+  {
+    name: "evaluate",
+    description: "Execute custom JavaScript code in the browser context and return the result.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        script: {
+          type: "string",
+          description: "JavaScript code to execute. Use 'return' to return a value.",
+        },
+      },
+      required: ["script"],
+    },
+  },
+  {
+    name: "go_back",
+    description: "Navigate back in browser history.",
+    inputSchema: {
+      type: "object",
+      properties: {},
+    },
+  },
+  {
+    name: "go_forward",
+    description: "Navigate forward in browser history.",
+    inputSchema: {
+      type: "object",
+      properties: {},
+    },
+  },
+  {
+    name: "get_html",
+    description: "Get the HTML content of the page or a specific element.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        selector: {
+          type: "string",
+          description: "Optional CSS selector. If not provided, returns full page HTML.",
+        },
+        outer: {
+          type: "boolean",
+          description: "If true, includes the element's own tag. Defaults to true.",
+        },
+      },
+    },
+  },
+  {
+    name: "select_option",
+    description: "Select an option from a dropdown/select element.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        selector: {
+          type: "string",
+          description: "CSS selector for the select element",
+        },
+        value: {
+          type: "string",
+          description: "The value or label of the option to select",
+        },
+      },
+      required: ["selector", "value"],
+    },
+  },
+  {
+    name: "hover",
+    description: "Hover over an element specified by CSS selector.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        selector: {
+          type: "string",
+          description: "CSS selector for the element to hover over",
+        },
+      },
+      required: ["selector"],
+    },
+  },
+  {
+    name: "get_links",
+    description: "Extract all links from the page or a specific element.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        selector: {
+          type: "string",
+          description: "Optional CSS selector to limit link extraction to a specific area.",
+        },
+      },
+    },
+  },
 ];
 
 // Handle tool listing
@@ -314,6 +442,229 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
                 url,
                 title,
                 description,
+              }, null, 2),
+            },
+          ],
+        };
+      }
+
+      case "wait_for": {
+        const { selector, timeout } = args as { selector: string; timeout?: number };
+        const currentPage = await getPage();
+
+        await currentPage.waitForSelector(selector, { timeout: timeout ?? 30000 });
+
+        return {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify({
+                success: true,
+                message: `Element found: ${selector}`,
+              }, null, 2),
+            },
+          ],
+        };
+      }
+
+      case "scroll": {
+        const { direction, selector } = args as { direction?: string; selector?: string };
+        const currentPage = await getPage();
+
+        if (selector) {
+          await currentPage.locator(selector).scrollIntoViewIfNeeded();
+          return {
+            content: [
+              {
+                type: "text",
+                text: JSON.stringify({
+                  success: true,
+                  message: `Scrolled to element: ${selector}`,
+                }, null, 2),
+              },
+            ],
+          };
+        }
+
+        switch (direction) {
+          case "top":
+            await currentPage.evaluate(() => window.scrollTo(0, 0));
+            break;
+          case "bottom":
+            await currentPage.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+            break;
+          case "up":
+            await currentPage.evaluate(() => window.scrollBy(0, -500));
+            break;
+          case "down":
+          default:
+            await currentPage.evaluate(() => window.scrollBy(0, 500));
+            break;
+        }
+
+        return {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify({
+                success: true,
+                message: `Scrolled ${direction ?? "down"}`,
+              }, null, 2),
+            },
+          ],
+        };
+      }
+
+      case "evaluate": {
+        const { script } = args as { script: string };
+        const currentPage = await getPage();
+
+        const result = await currentPage.evaluate((code) => {
+          return eval(code);
+        }, script);
+
+        return {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify({
+                success: true,
+                result: result,
+              }, null, 2),
+            },
+          ],
+        };
+      }
+
+      case "go_back": {
+        const currentPage = await getPage();
+        await currentPage.goBack();
+
+        return {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify({
+                success: true,
+                message: "Navigated back",
+                url: currentPage.url(),
+              }, null, 2),
+            },
+          ],
+        };
+      }
+
+      case "go_forward": {
+        const currentPage = await getPage();
+        await currentPage.goForward();
+
+        return {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify({
+                success: true,
+                message: "Navigated forward",
+                url: currentPage.url(),
+              }, null, 2),
+            },
+          ],
+        };
+      }
+
+      case "get_html": {
+        const { selector, outer } = args as { selector?: string; outer?: boolean };
+        const currentPage = await getPage();
+
+        let html: string;
+
+        if (selector) {
+          const element = await currentPage.$(selector);
+          if (!element) {
+            return {
+              content: [
+                {
+                  type: "text",
+                  text: `Error: Element not found: ${selector}`,
+                },
+              ],
+              isError: true,
+            };
+          }
+          html = outer !== false
+            ? await element.evaluate((el) => el.outerHTML)
+            : await element.evaluate((el) => el.innerHTML);
+        } else {
+          html = await currentPage.content();
+        }
+
+        return {
+          content: [
+            {
+              type: "text",
+              text: html,
+            },
+          ],
+        };
+      }
+
+      case "select_option": {
+        const { selector, value } = args as { selector: string; value: string };
+        const currentPage = await getPage();
+
+        await currentPage.selectOption(selector, value);
+
+        return {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify({
+                success: true,
+                message: `Selected "${value}" in ${selector}`,
+              }, null, 2),
+            },
+          ],
+        };
+      }
+
+      case "hover": {
+        const { selector } = args as { selector: string };
+        const currentPage = await getPage();
+
+        await currentPage.hover(selector);
+
+        return {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify({
+                success: true,
+                message: `Hovered over: ${selector}`,
+              }, null, 2),
+            },
+          ],
+        };
+      }
+
+      case "get_links": {
+        const { selector } = args as { selector?: string };
+        const currentPage = await getPage();
+
+        const container = selector || "body";
+        const links = await currentPage.$$eval(`${container} a[href]`, (anchors) =>
+          anchors.map((a) => ({
+            text: a.textContent?.trim() || "",
+            href: a.getAttribute("href") || "",
+          }))
+        );
+
+        return {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify({
+                count: links.length,
+                links: links,
               }, null, 2),
             },
           ],

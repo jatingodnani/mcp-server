@@ -68,6 +68,76 @@ const TOOLS: Tool[] = [
       required: ["url"],
     },
   },
+  {
+    name: "screenshot",
+    description: "Take a screenshot of the current page or a specific element.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        selector: {
+          type: "string",
+          description: "Optional CSS selector to screenshot a specific element. If not provided, captures the full page.",
+        },
+        fullPage: {
+          type: "boolean",
+          description: "Whether to capture the full scrollable page. Defaults to false.",
+        },
+      },
+    },
+  },
+  {
+    name: "extract_text",
+    description: "Extract text content from the page or a specific element.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        selector: {
+          type: "string",
+          description: "Optional CSS selector to extract text from. If not provided, extracts all visible text from the page.",
+        },
+      },
+    },
+  },
+  {
+    name: "click",
+    description: "Click on an element specified by CSS selector.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        selector: {
+          type: "string",
+          description: "CSS selector for the element to click",
+        },
+      },
+      required: ["selector"],
+    },
+  },
+  {
+    name: "type",
+    description: "Type text into an input field specified by CSS selector.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        selector: {
+          type: "string",
+          description: "CSS selector for the input element",
+        },
+        text: {
+          type: "string",
+          description: "The text to type into the element",
+        },
+      },
+      required: ["selector", "text"],
+    },
+  },
+  {
+    name: "get_page_info",
+    description: "Get information about the current page including URL, title, and meta description.",
+    inputSchema: {
+      type: "object",
+      properties: {},
+    },
+  },
 ];
 
 // Handle tool listing
@@ -111,6 +181,139 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
                 success: true,
                 title,
                 url: finalUrl,
+              }, null, 2),
+            },
+          ],
+        };
+      }
+
+      case "screenshot": {
+        const { selector, fullPage } = args as { selector?: string; fullPage?: boolean };
+        const currentPage = await getPage();
+
+        let screenshotBuffer: Buffer;
+
+        if (selector) {
+          const element = await currentPage.$(selector);
+          if (!element) {
+            return {
+              content: [
+                {
+                  type: "text",
+                  text: `Error: Element not found: ${selector}`,
+                },
+              ],
+              isError: true,
+            };
+          }
+          screenshotBuffer = await element.screenshot();
+        } else {
+          screenshotBuffer = await currentPage.screenshot({ fullPage: fullPage ?? false });
+        }
+
+        const base64Image = screenshotBuffer.toString("base64");
+
+        return {
+          content: [
+            {
+              type: "image",
+              data: base64Image,
+              mimeType: "image/png",
+            },
+          ],
+        };
+      }
+
+      case "extract_text": {
+        const { selector } = args as { selector?: string };
+        const currentPage = await getPage();
+
+        let text: string;
+
+        if (selector) {
+          const element = await currentPage.$(selector);
+          if (!element) {
+            return {
+              content: [
+                {
+                  type: "text",
+                  text: `Error: Element not found: ${selector}`,
+                },
+              ],
+              isError: true,
+            };
+          }
+          text = await element.innerText();
+        } else {
+          text = await currentPage.innerText("body");
+        }
+
+        return {
+          content: [
+            {
+              type: "text",
+              text: text,
+            },
+          ],
+        };
+      }
+
+      case "click": {
+        const { selector } = args as { selector: string };
+        const currentPage = await getPage();
+
+        await currentPage.click(selector);
+
+        return {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify({
+                success: true,
+                message: `Clicked element: ${selector}`,
+              }, null, 2),
+            },
+          ],
+        };
+      }
+
+      case "type": {
+        const { selector, text } = args as { selector: string; text: string };
+        const currentPage = await getPage();
+
+        await currentPage.fill(selector, text);
+
+        return {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify({
+                success: true,
+                message: `Typed text into: ${selector}`,
+              }, null, 2),
+            },
+          ],
+        };
+      }
+
+      case "get_page_info": {
+        const currentPage = await getPage();
+
+        const url = currentPage.url();
+        const title = await currentPage.title();
+        const description = await currentPage.$eval(
+          'meta[name="description"]',
+          (el) => el.getAttribute("content")
+        ).catch(() => null);
+
+        return {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify({
+                url,
+                title,
+                description,
               }, null, 2),
             },
           ],
